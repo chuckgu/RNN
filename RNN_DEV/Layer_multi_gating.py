@@ -54,6 +54,45 @@ class normal_hidden(object):
                              #self.n_layers,self.n_hidden),0),])
         return h
 
+
+class lstm_hidden(object):
+    def __init__(self,n_in,n_hidden):
+        self.n_in=int(n_in)
+        self.n_hidden=int(n_hidden)
+        self.input= T.tensor3()
+        
+        
+        self.W_hh=glorot_uniform((n_hidden,n_hidden))
+        self.W_in=glorot_uniform((n_in,n_hidden))
+        self.bh=zero((n_hidden,))
+        
+        self.params=[self.W_hh,self.W_in,self.bh]
+        
+    def set_previous(self,layer):
+        self.previous = layer
+        self.input=self.get_input()
+    
+    def _step(self,x_t, h_tm1):
+        return T.tanh(T.dot(h_tm1, self.W_hh) + T.dot(x_t, self.W_in) + self.bh)
+        
+    def get_input(self):
+        if hasattr(self, 'previous'):
+            return self.previous.get_output()
+        else:
+            return self.input    
+    
+    def get_output(self):
+        X=self.get_input()
+        h, _ = theano.scan(self._step, 
+                             sequences = X,
+                             outputs_info = alloc_zeros_matrix(self.n_hidden))
+                            # outputs_info =T.unbroadcast(alloc_zeros_matrix(self.input.shape[0],
+                             #                                               self.n_hidden), 0) )
+
+        return h
+
+
+
 class Model(object):
     def __init__(self,n_in,n_hidden,n_out,lr,n_epochs):
         
