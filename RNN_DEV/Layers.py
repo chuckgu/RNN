@@ -4,15 +4,6 @@ import numpy as np
 from initializations import glorot_uniform,zero,alloc_zeros_matrix
 
 
-def ndim_tensor(ndim):
-    if ndim == 2:
-        return T.matrix()
-    elif ndim == 3:
-        return T.tensor3()
-    elif ndim == 4:
-        return T.tensor4()
-    return T.matrix()
-    
 
 class hidden(object):
     def __init__(self,n_in,n_hidden):
@@ -27,6 +18,8 @@ class hidden(object):
         
         self.params=[self.W_hh,self.W_in,self.bh]
         
+        self.L1 = abs(self.W_hh.sum())+abs(self.W_in.sum())
+
     def set_previous(self,layer):
         self.previous = layer
         self.input=self.get_input()
@@ -85,18 +78,19 @@ class lstm(object):
             self.W_o, self.U_o, self.b_o,
         ]
         
+        
     def set_previous(self,layer):
         self.previous = layer
         self.input=self.get_input()
     
         
     def _step(self, x_t, h_tm1, c_tm1): 
-
         i_t = T.tanh(T.dot(x_t, self.W_i) + self.b_i + T.dot(h_tm1, self.U_i))
         f_t = T.tanh(T.dot(x_t, self.W_f) + self.b_f + T.dot(h_tm1, self.U_f))
         c_t = f_t * c_tm1 + i_t * T.tanh(T.dot(x_t, self.W_c) + self.b_c + T.dot(h_tm1, self.U_c))
         o_t = T.tanh( T.dot(x_t, self.W_o) + self.b_o + T.dot(h_tm1, self.U_o))
         h_t = o_t * T.tanh(c_t)
+        
         return h_t, c_t
        
     def set_input(self,x):
@@ -144,6 +138,7 @@ class gru(object):
             self.W_r, self.U_r, self.b_r,
             self.W_h, self.U_h, self.b_h,
         ]
+        
         
     def set_previous(self,layer):
         self.previous = layer

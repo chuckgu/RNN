@@ -5,37 +5,53 @@ import logging
 import matplotlib.pyplot as plt
 from initializations import glorot_uniform,zero,alloc_zeros_matrix
 from Layers import hidden,lstm,gru
+from Loss import mean_squared_error
 
 mode = theano.Mode(linker='cvm') #the runtime algo to execute the code is in c
 
+def ndim_tensor(ndim):
+    if ndim == 2:
+        return T.matrix()
+    elif ndim == 3:
+        return T.tensor3()
+    elif ndim == 4:
+        return T.tensor4()
+    return T.matrix()
+    
 
 
 class Model(object):
-    def __init__(self,n_in,n_hidden,n_out,lr,n_epochs):
+    
+    def __init__(self,n_in,n_hidden,n_out,lr=0.001,n_epochs=400):
         
         self.n_in=int(n_in)
         self.n_hidden=int(n_hidden)
         self.n_out=int(n_out)
         self.lr=float(lr)
+        self.L1_reg=0
+        self.L2_reg=0
         self.x = T.matrix(name = 'x', dtype = theano.config.floatX)
         self.y = T.matrix(name = 'y', dtype = theano.config.floatX) 
          
         self.layers = []
+        self.params=[]
+        self.errors=[]
         
         self.n_epochs=n_epochs
         self.W_hy = glorot_uniform((self.n_hidden,self.n_out))
         self.b_hy = zero((self.n_out,))
         
-        
-        
-        self.params=[]
-        self.errors=[]
+
         self.initial_momentum=0.5
         self.final_momentum=0.9
         self.momentum_switchover=5
         self.learning_rate_decay=0.999
         self.updates = {}
         self.n_layers=0
+        
+        self.L1= T.scalar('L1', dtype = theano.config.floatX)
+        #self.L2_sqr= T.scalar('L2_sqr', dtype = theano.config.floatX)
+        
         
     def add(self,layer):                                  
         self.layers.append(layer)
@@ -45,10 +61,12 @@ class Model(object):
         else:
             self.layers[0].set_input(self.x)
         
-        self.params+=layer.params
         self.n_layers=self.n_layers+1
-        #self.regularizers += regularizers
-        #self.constraints += constraints
+        self.params+=layer.params
+        #self.L1+=layer.L1
+        #self.L2_sqr+=layer.L2_sqr
+        
+        
     
     def get_output(self):
         return self.layers[-1].get_output()
@@ -65,11 +83,9 @@ class Model(object):
             self.set_input()
         return self.layers[0].get_input()     
         
-    def build(self):
-        #self.h0_tm1 = zero((self.n_layers*self.n_hidden))
-         
-            
-                                                     
+    def build(self):      
+        
+        #### set up parameter         
         self.params+=[self.W_hy, self.b_hy]
         for param in self.params:
             self.updates[param] = theano.shared(
@@ -78,7 +94,29 @@ class Model(object):
                                                       borrow = True).shape,
                                                       dtype = theano.config.floatX),
                                       name = 'updates')
-                           
+                                             
+        ### fianl prediction formular
+        self.y_pred = T.dot(self.get_output(), self.W_hy) + self.b_hy   
+        
+        for layer in self.layers:        
+            self.L1 += layer.L1
+            
+        self.L1 += abs(self.W_hy.sum())
+    
+    def predict(self,input):
+        
+        predict = theano.function(inputs = [self.x, ],
+                                           outputs = self.y_pred,
+                                           mode = mode, allow_input_downcast=True)
+        self.y_pred=predict(input)                                   
+       
+        return self.y_pred
+    
+    def loss(self,y):
+        
+        loss=mean_squared_error(y,self.y_pred)
+               
+        return loss
     
     def fit(self,X_train,Y_train):
         train_set_x = theano.shared(np.asarray(X_train, dtype=theano.config.floatX))
@@ -88,25 +126,9 @@ class Model(object):
         index = T.lscalar('index')    # index to a case    
         lr = T.scalar('lr', dtype = theano.config.floatX)
         mom = T.scalar('mom', dtype = theano.config.floatX)  # momentum
-        
-    
-
-        self.y_pred = T.dot(self.get_output(), self.W_hy) + self.b_hy
-        
-        self.loss = lambda y: T.mean((self.y_pred - y) ** 2)
-        cost = self.loss(self.y)
-        
-        self.predict = theano.function(inputs = [self.x, ],
-                                           outputs = self.y_pred,
-                                           mode = mode, allow_input_downcast=True)
-                                        
-        compute_train_error = theano.function(inputs = [index, ],
-                                              outputs = self.loss(self.y),
-                                              givens = {
-                                                  self.x: train_set_x[index],
-                                                  self.y: train_set_y[index]},
-                                              mode = mode)
-               
+   
+        cost = self.loss(self.y)+self.L1_reg * self.L1
+                       
         gparams = []
         for param in self.params:
             gparams.append(T.grad(cost, param))
@@ -119,6 +141,12 @@ class Model(object):
             updates[weight_update] = upd
             updates[param] = param + upd
             
+        compute_train_error = theano.function(inputs = [index, ],
+                                              outputs = self.loss(self.y),
+                                              givens = {
+                                                  self.x: train_set_x[index],
+                                                  self.y: train_set_y[index]},
+                                              mode = mode)    
        
         train_model =theano.function(inputs = [index, lr, mom],
                                       outputs = cost,
@@ -187,9 +215,9 @@ if __name__ == "__main__":
     
 
     
-    model = Model(n_u,n_h,n_y,0.001,400)
-    model.add(gru(n_u,n_h))
-    model.add(lstm(n_h,n_h))
+    model = Model(n_u,n_h,n_y,0.001,200)
+    model.add(hidden(n_u,n_h))
+    #model.add(lstm(n_h,n_h))
     
     
     model.build()
