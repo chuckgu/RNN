@@ -4,174 +4,10 @@ import numpy as np
 import logging
 import matplotlib.pyplot as plt
 from initializations import glorot_uniform,zero,alloc_zeros_matrix
+from Layers import hidden,lstm,gru
 
 mode = theano.Mode(linker='cvm') #the runtime algo to execute the code is in c
 
-def ndim_tensor(ndim):
-    if ndim == 2:
-        return T.matrix()
-    elif ndim == 3:
-        return T.tensor3()
-    elif ndim == 4:
-        return T.tensor4()
-    return T.matrix()
-    
-
-class normal_hidden(object):
-    def __init__(self,n_in,n_hidden):
-        self.n_in=int(n_in)
-        self.n_hidden=int(n_hidden)
-        self.input= T.tensor3()
-        
-        
-        self.W_hh=glorot_uniform((n_hidden,n_hidden))
-        self.W_in=glorot_uniform((n_in,n_hidden))
-        self.bh=zero((n_hidden,))
-        
-        self.params=[self.W_hh,self.W_in,self.bh]
-        
-    def set_previous(self,layer):
-        self.previous = layer
-        self.input=self.get_input()
-    
-    def _step(self,x_t, h_tm1):
-        return T.tanh(T.dot(h_tm1, self.W_hh) + T.dot(x_t, self.W_in) + self.bh)
-        
-    def get_input(self):
-        if hasattr(self, 'previous'):
-            return self.previous.get_output()
-        else:
-            return self.input    
-    
-    def get_output(self):
-        X=self.get_input()
-        h, _ = theano.scan(self._step, 
-                             sequences = X,
-                             outputs_info = alloc_zeros_matrix(self.n_hidden))
-                            # outputs_info =T.unbroadcast(alloc_zeros_matrix(self.input.shape[0],
-                             #                                               self.n_hidden), 0) )
-                            # outputs_info = [T.unbroadcast(T.alloc(self.h0_tm1,
-                             #self.n_layers,self.n_hidden),0),])
-        return h
-
-
-class lstm(object):
-    def __init__(self,n_in,n_hidden):
-        self.n_in=int(n_in)
-        self.n_hidden=int(n_hidden)
-        self.input= T.tensor3()
-        
-        
-        self.W_i = glorot_uniform((n_in,n_hidden))
-        self.U_i = glorot_uniform((n_hidden,n_hidden))
-        self.b_i = zero((n_hidden,))
-
-        self.W_f = glorot_uniform((n_in,n_hidden))
-        self.U_f = glorot_uniform((n_hidden,n_hidden))
-        self.b_f = zero((n_hidden,))
-
-        self.W_c = glorot_uniform((n_in,n_hidden))
-        self.U_c = glorot_uniform((n_hidden,n_hidden))
-        self.b_c = zero((n_hidden,))
-
-        self.W_o = glorot_uniform((n_in,n_hidden))
-        self.U_o = glorot_uniform((n_hidden,n_hidden))
-        self.b_o = zero((n_hidden,))
-
-        self.params = [
-            self.W_i, self.U_i, self.b_i,
-            self.W_c, self.U_c, self.b_c,
-            self.W_f, self.U_f, self.b_f,
-            self.W_o, self.U_o, self.b_o,
-        ]
-        
-    def set_previous(self,layer):
-        self.previous = layer
-        self.input=self.get_input()
-    
-        
-    def _step(self, x_t, h_tm1, c_tm1): 
-
-        i_t = T.tanh(T.dot(x_t, self.W_i) + self.b_i + T.dot(h_tm1, self.U_i))
-        f_t = T.tanh(T.dot(x_t, self.W_f) + self.b_f + T.dot(h_tm1, self.U_f))
-        c_t = f_t * c_tm1 + i_t * T.tanh(T.dot(x_t, self.W_c) + self.b_c + T.dot(h_tm1, self.U_c))
-        o_t = T.tanh( T.dot(x_t, self.W_o) + self.b_o + T.dot(h_tm1, self.U_o))
-        h_t = o_t * T.tanh(c_t)
-        return h_t, c_t
-
-        
-    def get_input(self):
-        if hasattr(self, 'previous'):
-            return self.previous.get_output()
-        else:
-            return self.input    
-    
-    def get_output(self):
-        X=self.get_input()
-        [h,c], _ = theano.scan(self._step, 
-                             sequences = X,
-                             outputs_info = [alloc_zeros_matrix(self.n_hidden),
-                                             alloc_zeros_matrix(self.n_hidden)])
-                            # outputs_info =T.unbroadcast(alloc_zeros_matrix(self.input.shape[0],
-                             #                                               self.n_hidden), 0) )
-
-        return h
-
-class gru(object):
-    def __init__(self,n_in,n_hidden):
-        self.n_in=int(n_in)
-        self.n_hidden=int(n_hidden)
-        self.input= T.tensor3()
-        
-        
-        self.W_z = glorot_uniform((n_in,n_hidden))
-        self.U_z = glorot_uniform((n_hidden,n_hidden))
-        self.b_z = zero((n_hidden,))
-
-        self.W_r = glorot_uniform((n_in,n_hidden))
-        self.U_r = glorot_uniform((n_hidden,n_hidden))
-        self.b_r = zero((n_hidden,))
-
-        self.W_h = glorot_uniform((n_in,n_hidden)) 
-        self.U_h = glorot_uniform((n_hidden,n_hidden))
-        self.b_h = zero((n_hidden,))
-
-        self.params = [
-            self.W_z, self.U_z, self.b_z,
-            self.W_r, self.U_r, self.b_r,
-            self.W_h, self.U_h, self.b_h,
-        ]
-        
-    def set_previous(self,layer):
-        self.previous = layer
-        self.input=self.get_input()
-    
-    def _step(self,x_t, h_tm1):
-        
-        z = T.tanh(T.dot(x_t, self.W_z) + self.b_z + T.dot(h_tm1, self.U_z))
-        r = T.tanh(T.dot(x_t, self.W_r) + self.b_r + T.dot(h_tm1, self.U_r))
-        hh_t = T.tanh(T.dot(x_t, self.W_h) + self.b_h + T.dot(r * h_tm1, self.U_h))
-        h_t = z * h_tm1 + (1 - z) * hh_t
-        
-        return h_t
-        
-        
-    def get_input(self):
-        if hasattr(self, 'previous'):
-            return self.previous.get_output()
-        else:
-            return self.input    
-    
-    def get_output(self):
-        X=self.get_input()
-        h, _ = theano.scan(self._step, 
-                             sequences = X,
-                             outputs_info = alloc_zeros_matrix(self.n_hidden))
-                            # outputs_info =T.unbroadcast(alloc_zeros_matrix(self.input.shape[0],
-                             #                                               self.n_hidden), 0) )
-                            # outputs_info = [T.unbroadcast(T.alloc(self.h0_tm1,
-                             #self.n_layers,self.n_hidden),0),])
-        return h
 
 
 class Model(object):
@@ -184,8 +20,7 @@ class Model(object):
         self.x = T.matrix(name = 'x', dtype = theano.config.floatX)
         self.y = T.matrix(name = 'y', dtype = theano.config.floatX) 
          
-        #self.hidden=normal_hidden(n_in,n_hidden)
-        self.hidden = []
+        self.layers = []
         
         self.n_epochs=n_epochs
         self.W_hy = glorot_uniform((self.n_hidden,self.n_out))
@@ -203,12 +38,12 @@ class Model(object):
         self.n_layers=0
         
     def add(self,layer):                                  
-        self.hidden.append(layer)
+        self.layers.append(layer)
 
-        if len(self.hidden) > 1:
-            self.hidden[-1].set_previous(self.hidden[-2])
+        if len(self.layers) > 1:
+            self.layers[-1].set_previous(self.layers[-2])
         else:
-            self.hidden[0].input=self.x
+            self.layers[0].set_input(self.x)
         
         self.params+=layer.params
         self.n_layers=self.n_layers+1
@@ -216,19 +51,19 @@ class Model(object):
         #self.constraints += constraints
     
     def get_output(self):
-        return self.hidden[-1].get_output()
+        return self.layers[-1].get_output()
 
     def set_input(self):
-        for l in self.hidden:
+        for l in self.layers:
             if hasattr(l, 'input'):
                 ndim = l.input.ndim
-                self.hidden[0].input = ndim_tensor(ndim)
+                self.layers[0].input = ndim_tensor(ndim)
                 break
 
     def get_input(self, train=False):
-        if not hasattr(self.hidden[0], 'input'):
+        if not hasattr(self.layers[0], 'input'):
             self.set_input()
-        return self.hidden[0].get_input()     
+        return self.layers[0].get_input()     
         
     def build(self):
         #self.h0_tm1 = zero((self.n_layers*self.n_hidden))
@@ -248,17 +83,7 @@ class Model(object):
     def fit(self,X_train,Y_train):
         train_set_x = theano.shared(np.asarray(X_train, dtype=theano.config.floatX))
         train_set_y = theano.shared(np.asarray(Y_train, dtype=theano.config.floatX))
-        '''
-        def step(x_t, h_tm1):
-            num=0
-            h_tm1_c=[]
-            for layer in self.hidden:     
-                h_t=layer.activation(x_t,h_tm1[num])      
-                x_t=h_t
-                h_tm1_c.append(h_t)
-                num=num+1
-            return h_tm1_c
-        '''    
+        
         
         index = T.lscalar('index')    # index to a case    
         lr = T.scalar('lr', dtype = theano.config.floatX)
@@ -364,9 +189,10 @@ if __name__ == "__main__":
     
     model = Model(n_u,n_h,n_y,0.001,400)
     model.add(gru(n_u,n_h))
-    #model.add(normal_hidden(n_h,n_h))
+    model.add(lstm(n_h,n_h))
+    
+    
     model.build()
-
     model.fit(seq,targets)
     
     
@@ -395,10 +221,10 @@ if __name__ == "__main__":
     ax3 = plt.subplot(313)
     plt.plot(model.errors)
     plt.grid()
-    ax1.set_title('Training error')
+    ax3.set_title('Training error')
 
     # Save as a file
-    plt.savefig('real.png')
+    #plt.savefig('real.png')
 
     
   
