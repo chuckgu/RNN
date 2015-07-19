@@ -49,6 +49,8 @@ class Model(object):
         self.updates = {}
         self.n_layers=0
         
+        
+        
         self.L1= T.scalar('L1', dtype = theano.config.floatX)
         #self.L2_sqr= T.scalar('L2_sqr', dtype = theano.config.floatX)
         
@@ -63,8 +65,7 @@ class Model(object):
         
         self.n_layers=self.n_layers+1
         self.params+=layer.params
-        #self.L1+=layer.L1
-        #self.L2_sqr+=layer.L2_sqr
+
         
         
     
@@ -98,10 +99,7 @@ class Model(object):
         ### fianl prediction formular
         self.y_pred = T.dot(self.get_output(), self.W_hy) + self.b_hy   
         
-        for layer in self.layers:        
-            self.L1 += layer.L1
-            
-        self.L1 += abs(self.W_hy.sum())
+       
     
     def predict(self,input):
         
@@ -126,8 +124,15 @@ class Model(object):
         index = T.lscalar('index')    # index to a case    
         lr = T.scalar('lr', dtype = theano.config.floatX)
         mom = T.scalar('mom', dtype = theano.config.floatX)  # momentum
+        
+        #for layer in self.layers:  
+      
+        self.L1 = self.layers[0].L1
+         
+        self.L1 += abs(self.W_hy.sum())
    
         cost = self.loss(self.y)+self.L1_reg * self.L1
+        
                        
         gparams = []
         for param in self.params:
@@ -172,8 +177,7 @@ class Model(object):
                 example_cost = train_model(idx,
                                            self.lr,
                                            effective_momentum)
-                #this_train_loss = np.mean(example_cost)   
-                
+               
                                   
             # compute loss on training set
             train_losses = [compute_train_error(i)
