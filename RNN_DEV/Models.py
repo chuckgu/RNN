@@ -4,7 +4,7 @@ import numpy as np
 import logging
 import matplotlib.pyplot as plt
 from initializations import glorot_uniform,zero,alloc_zeros_matrix
-from Layers import hidden,lstm,gru
+from Layers import hidden,lstm,gru,BiDirectionLSTM
 from Loss import mean_squared_error
 
 mode = theano.Mode(linker='cvm') #the runtime algo to execute the code is in c
@@ -31,7 +31,8 @@ class Model(object):
         self.L1_reg=0
         self.L2_reg=0
         self.x = T.matrix(name = 'x', dtype = theano.config.floatX)
-        self.y = T.matrix(name = 'y', dtype = theano.config.floatX) 
+        #self.y = T.matrix(name = 'y', dtype = theano.config.floatX) 
+        #self.y_pred = T.matrix(name = 'y', dtype = theano.config.floatX) 
          
         self.layers = []
         self.params=[]
@@ -84,7 +85,7 @@ class Model(object):
             self.set_input()
         return self.layers[0].get_input()     
         
-    def build(self):      
+    def build(self,output_type):      
         
         #### set up parameter         
         self.params+=[self.W_hy, self.b_hy]
@@ -97,29 +98,62 @@ class Model(object):
                                       name = 'updates')
                                              
         ### fianl prediction formular
-        self.y_pred = T.dot(self.get_output(), self.W_hy) + self.b_hy   
-        
-       
-    
-    def predict(self,input):
-        
-        predict = theano.function(inputs = [self.x, ],
+                                             
+        self.y_pred = T.dot(self.get_output(), self.W_hy) + self.b_hy
+                                     
+        self.output_type = output_type
+        if self.output_type == 'real':
+            self.y = T.matrix(name = 'y', dtype = theano.config.floatX) 
+            self.loss = lambda y: self.mse(y) # y is input and self.mse(y) is output
+            self.predict = theano.function(inputs = [self.x, ],
                                            outputs = self.y_pred,
-                                           mode = mode, allow_input_downcast=True)
-        self.y_pred=predict(input)                                   
-       
-        return self.y_pred
-    
-    def loss(self,y):
+                                           mode = mode)
+
+        elif self.output_type == 'binary':
+            self.y = T.matrix(name = 'y', dtype = 'int32')
+            self.p_y_given_x = T.nnet.sigmoid(self.y_pred)
+            self.y_out = T.round(self.p_y_given_x)  # round to {0,1}
+            self.loss = lambda y: self.nll_binary(y)
+            self.predict_proba = theano.function(inputs = [self.x, ],
+                                                 outputs = self.p_y_given_x,
+                                                 mode = mode)
+            self.predict = theano.function(inputs = [self.x, ],
+                                           outputs = T.round(self.p_y_given_x),
+                                           mode = mode)
         
-        loss=mean_squared_error(y,self.y_pred)
-               
-        return loss
-    
+        elif self.output_type == 'softmax':
+            self.y = T.vector(name = 'y', dtype = 'int32')
+            self.p_y_given_x = T.nnet.softmax(self.y_pred)
+            self.y_out = T.argmax(self.p_y_given_x, axis = -1)
+            self.loss = lambda y: self.nll_multiclass(y)
+            self.predict_proba = theano.function(inputs = [self.x, ],
+                                                 outputs = self.p_y_given_x,
+                                                 mode = mode)
+            self.predict = theano.function(inputs = [self.x, ],
+                                           outputs = self.y_out, # y-out is calculated by applying argmax
+                                           mode = mode)
+        else:
+            raise NotImplementedError
+                                      
+        
+    def mse(self, y):
+        # mean is because of minibatch
+        return T.mean((self.y_pred - y) ** 2)
+
+    def nll_binary(self, y):
+        # negative log likelihood here is cross entropy
+        return T.mean(T.nnet.binary_crossentropy(self.p_y_given_x, y))
+
+    def nll_multiclass(self, y):
+        # notice to [  T.arange(y.shape[0])  ,  y  ]
+        return -T.mean(T.log(self.p_y_given_x)[T.arange(y.shape[0]), y])   
+        
+   
     def fit(self,X_train,Y_train):
         train_set_x = theano.shared(np.asarray(X_train, dtype=theano.config.floatX))
         train_set_y = theano.shared(np.asarray(Y_train, dtype=theano.config.floatX))
-        
+        if self.output_type in ('binary', 'softmax'):
+            train_set_y = T.cast(train_set_y, 'int32')
         
         index = T.lscalar('index')    # index to a case    
         lr = T.scalar('lr', dtype = theano.config.floatX)
@@ -127,11 +161,11 @@ class Model(object):
         
         #for layer in self.layers:  
       
-        self.L1 = self.layers[0].L1
+        #self.L1 = self.layers[0].L1
          
-        self.L1 += abs(self.W_hy.sum())
+        #self.L1 += abs(self.W_hy.sum())
    
-        cost = self.loss(self.y)+self.L1_reg * self.L1
+        cost = self.loss(self.y) #+self.L1_reg * self.L1
         
                        
         gparams = []
@@ -194,69 +228,7 @@ class Model(object):
     
     
 
-if __name__ == "__main__":
 
-    
-    print 'Testing model with real outputs'
-    n_u = 3 # input vector size (not time at this point)
-    n_h = 10 # hidden vector size
-    n_y = 3 # output vector size
-    time_steps = 15 # number of time-steps in time
-    n_seq = 100 # number of sequences for training
-
-    np.random.seed(0)
-    
-    # generating random sequences
-    seq = np.random.randn(n_seq, time_steps, n_u)
-    seq=np.cast[theano.config.floatX](seq)
-    targets = np.zeros((n_seq, time_steps, n_y))
-
-    targets[:, 1:, 0] = seq[:, :-1, 0] # 1 time-step delay between input and output
-    targets[:, 2:, 1] = seq[:, :-2, 1] # 2 time-step delay
-    targets[:, 3:, 2] = seq[:, :-3, 2] # 3 time-step delay
-
-    targets += 0.01 * np.random.standard_normal(targets.shape)
-    
-
-    
-    model = Model(n_u,n_h,n_y,0.001,200)
-    model.add(hidden(n_u,n_h))
-    #model.add(lstm(n_h,n_h))
-    
-    
-    model.build()
-    model.fit(seq,targets)
-    
-    
-    # We just plot one of the sequences
-    plt.close('all')
-    fig = plt.figure()
-
-    # Graph 1
-    ax1 = plt.subplot(311) # numrows, numcols, fignum
-    plt.plot(seq[0])
-    plt.grid()
-    ax1.set_title('Input sequence')
-
-    # Graph 2
-    ax2 = plt.subplot(312)
-    true_targets = plt.plot(targets[0])
-
-    guess = model.predict(seq[0])
-    guessed_targets = plt.plot(guess, linestyle='--')
-    plt.grid()
-    for i, x in enumerate(guessed_targets):
-        x.set_color(true_targets[i].get_color())
-    ax2.set_title('solid: true output, dashed: model output')
-
-    # Graph 3
-    ax3 = plt.subplot(313)
-    plt.plot(model.errors)
-    plt.grid()
-    ax3.set_title('Training error')
-
-    # Save as a file
-    #plt.savefig('real.png')
 
     
   
