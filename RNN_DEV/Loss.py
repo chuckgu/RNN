@@ -40,6 +40,20 @@ def binary_crossentropy(y_true, y_pred):
     y_pred = T.clip(y_pred, epsilon, 1.0 - epsilon)
     bce = T.nnet.binary_crossentropy(y_pred, y_true).mean(axis=-1)
     return bce
+
+def mse(y_pred, y):
+    # mean is because of minibatch
+    return T.mean((y_pred - y) ** 2)
+
+def nll_binary(p_y_given_x, y):
+    # negative log likelihood here is cross entropy
+    return T.mean(T.nnet.binary_crossentropy(p_y_given_x, y))
+
+def nll_multiclass(p_y_given_x, y):
+    # notice to [  T.arange(y.shape[0])  ,  y  ]
+    return -T.mean(T.log(p_y_given_x)[T.arange(y.shape[0]), y])
+        
+        
 '''
 # aliases
 mse = MSE = mean_squared_error

@@ -10,6 +10,7 @@ class hidden(object):
         self.n_in=int(n_in)
         self.n_hidden=int(n_hidden)
         self.input= T.tensor3()
+
         
         
         self.W_hh=glorot_uniform((n_hidden,n_hidden))
@@ -18,7 +19,8 @@ class hidden(object):
         
         self.params=[self.W_hh,self.W_in,self.bh]
         
-        self.L1 = abs(self.W_hh.sum())+abs(self.W_in.sum())
+        self.L1 = T.sum(abs(self.W_hh))+T.sum(abs(self.W_in))
+        self.L2_sqr = T.sum(self.W_hh**2) + T.sum(self.W_in**2)
 
     def set_previous(self,layer):
         self.previous = layer
@@ -44,8 +46,12 @@ class hidden(object):
                             # outputs_info =T.unbroadcast(alloc_zeros_matrix(self.input.shape[0],
                              #                                               self.n_hidden), 0) )
                             # outputs_info = [T.unbroadcast(T.alloc(self.h0_tm1,
-                             #self.n_layers,self.n_hidden),0),])
+                          #self.n_layers,self.n_hidden),0),])                  
+        
+        print h.ndim        
         return h
+        
+
 
 
 class lstm(object):
@@ -78,6 +84,15 @@ class lstm(object):
             self.W_o, self.U_o, self.b_o,
         ]
         
+        self.L1 = T.sum(abs(self.W_i))+T.sum(abs(self.U_i))+\
+                  T.sum(abs(self.W_f))+T.sum(abs(self.U_f))+\
+                  T.sum(abs(self.W_c))+T.sum(abs(self.U_c))+\
+                  T.sum(abs(self.W_o))+T.sum(abs(self.U_o))
+        
+        self.L2_sqr = T.sum(self.W_i**2) + T.sum(self.U_i**2)+\
+                      T.sum(self.W_f**2) + T.sum(self.U_f**2)+\
+                      T.sum(self.W_c**2) + T.sum(self.U_c**2)+\
+                      T.sum(self.W_o**2) + T.sum(self.U_o**2)
         
     def set_previous(self,layer):
         self.previous = layer
@@ -138,7 +153,14 @@ class gru(object):
             self.W_r, self.U_r, self.b_r,
             self.W_h, self.U_h, self.b_h,
         ]
+
+        self.L1 = T.sum(abs(self.W_z))+T.sum(abs(self.U_z))+\
+                  T.sum(abs(self.W_r))+T.sum(abs(self.U_r))+\
+                  T.sum(abs(self.W_h))+T.sum(abs(self.U_h))
         
+        self.L2_sqr = T.sum(self.W_z**2) + T.sum(self.U_z**2)+\
+                      T.sum(self.W_r**2) + T.sum(self.U_r**2)+\
+                      T.sum(self.W_h**2) + T.sum(self.U_h**2)        
         
     def set_previous(self,layer):
         self.previous = layer
@@ -172,6 +194,8 @@ class gru(object):
                             # outputs_info = [T.unbroadcast(T.alloc(self.h0_tm1,
                              #self.n_layers,self.n_hidden),0),])
         return h
+
+
 
 
 class BiDirectionLSTM(object):
@@ -227,6 +251,23 @@ class BiDirectionLSTM(object):
             self.Wb_o, self.Ub_o, self.bb_o,
         ]
 
+        self.L1 = T.sum(abs(self.W_i))+T.sum(abs(self.U_i))+\
+                  T.sum(abs(self.W_f))+T.sum(abs(self.U_f))+\
+                  T.sum(abs(self.W_c))+T.sum(abs(self.U_c))+\
+                  T.sum(abs(self.W_o))+T.sum(abs(self.U_o))+\
+                  T.sum(abs(self.Wb_i))+T.sum(abs(self.Ub_i))+\
+                  T.sum(abs(self.Wb_f))+T.sum(abs(self.Ub_f))+\
+                  T.sum(abs(self.Wb_c))+T.sum(abs(self.Ub_c))+\
+                  T.sum(abs(self.Wb_o))+T.sum(abs(self.Ub_o))
+        
+        self.L2_sqr = T.sum(self.W_i**2) + T.sum(self.U_i**2)+\
+                      T.sum(self.W_f**2) + T.sum(self.U_f**2)+\
+                      T.sum(self.W_c**2) + T.sum(self.U_c**2)+\
+                      T.sum(self.W_o**2) + T.sum(self.U_o**2)+\
+                      T.sum(self.Wb_i**2) + T.sum(self.Ub_i**2)+\
+                      T.sum(self.Wb_f**2) + T.sum(self.Ub_f**2)+\
+                      T.sum(self.Wb_c**2) + T.sum(self.Ub_c**2)+\
+                      T.sum(self.Wb_o**2) + T.sum(self.Ub_o**2)
 
         
         
@@ -297,3 +338,71 @@ class BiDirectionLSTM(object):
             return T.concatenate([forward, backward], axis=2)
         else:
             raise Exception('output mode is not sum or concat')
+
+class decoder(object):
+    def __init__(self,n_in,n_out):
+        self.n_in=int(n_in)
+        self.n_out=int(n_out)
+        self.input= T.tensor3()
+
+        #self.W_in=glorot_uniform((n_in,n_out))
+        
+        self.W_hh=glorot_uniform((n_out,n_out))
+        self.W_ys=glorot_uniform((n_out,n_out))
+
+        
+        self.W_hy = glorot_uniform((self.n_out,self.n_out))
+        self.W_cy = glorot_uniform((self.n_in,self.n_out))
+        self.W_cs= glorot_uniform((self.n_in,self.n_out))
+        
+        self.W_ha = glorot_uniform((self.n_in,))
+        self.W_sa= glorot_uniform((self.n_out,10))
+        
+        self.params=[self.W_hh,self.W_ys,self.W_hy,self.W_cy,self.W_cs,self.W_ha,self.W_sa]
+        
+         
+        self.L1 = T.sum(abs(self.W_hh))+T.sum(abs(self.W_ys))
+        self.L2_sqr = T.sum(self.W_hh**2) + T.sum(self.W_ys**2)
+
+    def set_previous(self,layer):
+        self.previous = layer
+        self.input=self.get_input()
+    
+    def _step(self,x_t, s_tm1,y_tm1,h):
+
+        
+        e=T.tanh(T.dot(h,self.W_ha)+T.dot(s_tm1,self.W_sa).T)
+                
+        e=e/T.sum(T.exp(e))
+        
+        c=T.dot(e.T,h)
+        
+
+        y_pred = T.dot(s_tm1, self.W_hy) + T.dot(c,self.W_cy)
+        
+        s_t=T.tanh(T.dot(s_tm1, self.W_hh) + T.dot(y_pred, self.W_ys)) + T.dot(c,self.W_cs)
+        
+
+        
+        return s_t,y_pred
+        
+    def set_input(self,x):
+        self.input=x
+        
+    def get_input(self):
+        if hasattr(self, 'previous'):
+            return self.previous.get_output()
+        else:
+            return self.input    
+    
+    def get_output(self):
+        X=self.get_input()
+
+        [h,y], _ = theano.scan(self._step, 
+                             sequences = X,
+                             outputs_info = [alloc_zeros_matrix(self.n_out),
+                                             alloc_zeros_matrix(self.n_out)],
+                             non_sequences=X)
+
+        p_y_given_x = T.nnet.softmax(y)
+        return p_y_given_x

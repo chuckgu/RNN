@@ -2,10 +2,12 @@ import theano
 import theano.tensor as T
 import numpy as np
 import matplotlib.pyplot as plt
-from Layers import hidden,lstm,gru,BiDirectionLSTM
-from Models import Model
+from Layers import hidden,lstm,gru,BiDirectionLSTM,decoder
+from Models import RNN,ENC_DEC
 
 print 'Testing model with softmax outputs'
+
+#theano.config.exception_verbosity='high'
 
 n_u = 2
 n_h = 6
@@ -27,11 +29,21 @@ targets[:, 2:][seq[:, 1:-1, 1] > seq[:, :-2, 0] + thresh] = 1
 targets[:, 2:][seq[:, 1:-1, 1] < seq[:, :-2, 0] - thresh] = 2
 # otherwise class is 0
 
+targets_onehot=np.zeros((n_seq, time_steps,n_y), dtype=np.int)
 
-model = Model(n_u,n_h,n_y,0.001,200)
+targets_onehot[:,:,0][targets[:,:]==0]=1
+targets_onehot[:,:,1][targets[:,:]==1]=1
+targets_onehot[:,:,2][targets[:,:]==2]=1
+
+
+model = ENC_DEC(n_u,n_h,n_y,0.001,200)
 model.add(BiDirectionLSTM(n_u,n_h))
-#model.add(lstm(n_h,n_h))
-
+model.add(decoder(n_h,n_y))
+'''
+model = RNN(n_u,n_h,n_y,0.001,200)
+model.add(hidden(n_u,n_h))
+model.add(hidden(n_h,n_h))
+'''
 
 model.build('softmax')
 model.fit(seq,targets)
