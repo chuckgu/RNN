@@ -2,6 +2,7 @@ import theano
 import theano.tensor as T
 import numpy as np
 from initializations import glorot_uniform,zero,alloc_zeros_matrix
+import theano.typed_list
 
 
 
@@ -18,6 +19,7 @@ class hidden(object):
         self.bh=zero((n_hidden,))
         
         self.params=[self.W_hh,self.W_in,self.bh]
+        
         
         self.L1 = T.sum(abs(self.W_hh))+T.sum(abs(self.W_in))
         self.L2_sqr = T.sum(self.W_hh**2) + T.sum(self.W_in**2)
@@ -47,8 +49,7 @@ class hidden(object):
                              #                                               self.n_hidden), 0) )
                             # outputs_info = [T.unbroadcast(T.alloc(self.h0_tm1,
                           #self.n_layers,self.n_hidden),0),])                  
-        
-        print h.ndim        
+                
         return h
         
 
@@ -199,7 +200,7 @@ class gru(object):
 
 
 class BiDirectionLSTM(object):
-    def __init__(self,n_in,n_hidden,output_mode='sum'):
+    def __init__(self,n_in,n_hidden,output_mode='concat'):
         self.n_in=int(n_in)
         self.n_hidden=int(n_hidden)
         self.output_mode = output_mode
@@ -335,31 +336,45 @@ class BiDirectionLSTM(object):
         if self.output_mode is 'sum':
             return forward + backward
         elif self.output_mode is 'concat':
-            return T.concatenate([forward, backward], axis=2)
+            return T.concatenate([forward, backward], axis=1)
         else:
             raise Exception('output mode is not sum or concat')
 
 class decoder(object):
-    def __init__(self,n_in,n_out):
+    def __init__(self,n_in,n_out,time_steps_x,time_steps_y):
         self.n_in=int(n_in)
         self.n_out=int(n_out)
         self.input= T.tensor3()
+        self.output= T.tensor3()
+        self.time_steps_x=int(time_steps_x)
+        self.time_steps_y=int(time_steps_y)
+        
+        self.W_z = glorot_uniform((n_in,n_out))
+        self.U_z = glorot_uniform((n_out,n_out))
+        self.b_z = zero((n_out,))
 
-        #self.W_in=glorot_uniform((n_in,n_out))
+        self.W_r = glorot_uniform((n_in,n_out))
+        self.U_r = glorot_uniform((n_out,n_out))
+        self.b_r = zero((n_out,))
+
+        self.W_h = glorot_uniform((n_in,n_out)) 
+        self.U_h = glorot_uniform((n_out,n_out))
+        self.b_h = zero((n_out,))
+
         
         self.W_hh=glorot_uniform((n_out,n_out))
-        self.W_ys=glorot_uniform((n_out,n_out))
+        self.W_ys=glorot_uniform((self.n_out,n_out))
 
         
-        self.W_hy = glorot_uniform((self.n_out,self.n_out))
+        
         self.W_cy = glorot_uniform((self.n_in,self.n_out))
         self.W_cs= glorot_uniform((self.n_in,self.n_out))
         
         self.W_ha = glorot_uniform((self.n_in,))
-        self.W_sa= glorot_uniform((self.n_out,10))
+        self.W_sa= glorot_uniform((self.n_out,self.time_steps_x))
         
-        self.params=[self.W_hh,self.W_ys,self.W_hy,self.W_cy,self.W_cs,self.W_ha,self.W_sa]
-        
+        self.params=[self.W_hh,self.W_ys,self.W_cs,self.W_ha,self.W_sa]
+        #self.params=[self.W_hh]
          
         self.L1 = T.sum(abs(self.W_hh))+T.sum(abs(self.W_ys))
         self.L2_sqr = T.sum(self.W_hh**2) + T.sum(self.W_ys**2)
@@ -368,41 +383,58 @@ class decoder(object):
         self.previous = layer
         self.input=self.get_input()
     
-    def _step(self,x_t, s_tm1,y_tm1,h):
-
-        
-        e=T.tanh(T.dot(h,self.W_ha)+T.dot(s_tm1,self.W_sa).T)
-                
-        e=e/T.sum(T.exp(e))
-        
-        c=T.dot(e.T,h)
-        
-
-        y_pred = T.dot(s_tm1, self.W_hy) + T.dot(c,self.W_cy)
-        
-        s_t=T.tanh(T.dot(s_tm1, self.W_hh) + T.dot(y_pred, self.W_ys)) + T.dot(c,self.W_cs)
-        
-
-        
-        return s_t,y_pred
         
     def set_input(self,x):
         self.input=x
+    
+    
         
     def get_input(self):
         if hasattr(self, 'previous'):
             return self.previous.get_output()
         else:
             return self.input    
-    
-    def get_output(self):
+
+    def _step(self,y_t,s_tm1,h):
+        
+        
+        e=T.tanh(T.dot(h,self.W_ha)+T.dot(s_tm1,self.W_sa).T)
+                
+        e=T.exp(e)/T.sum(T.exp(e))
+
+        c=T.dot(e.T,h)
+
+        
+        s_t=T.tanh(T.dot(s_tm1, self.W_hh)  +T.dot(y_t,self.W_ys) +T.dot(c,self.W_cs))
+        
+        return T.cast(s_t,dtype =theano.config.floatX)  
+
+    def get_sample(self,y,h_tm1):
         X=self.get_input()
+        Y=T.switch(y[0]<0,alloc_zeros_matrix(self.n_out),self.one_hot(y,self.n_out)[0])
 
-        [h,y], _ = theano.scan(self._step, 
-                             sequences = X,
-                             outputs_info = [alloc_zeros_matrix(self.n_out),
-                                             alloc_zeros_matrix(self.n_out)],
+        h=self._step(Y,h_tm1,X)        
+        return h
+
+    
+    def get_output(self,y):
+        X=self.get_input()
+        Y=y                    
+        Y=self.one_hot(Y,self.n_out)
+        
+        h, _ = theano.scan(self._step, 
+                             sequences = Y,
+                             outputs_info = alloc_zeros_matrix(self.n_out),
                              non_sequences=X)
+                             #n_steps=self.time_steps_y)
 
-        p_y_given_x = T.nnet.softmax(y)
-        return p_y_given_x
+        return h
+        
+        
+    def one_hot(self,t, r=None):
+        if r is None:
+            r = T.max(t) + 1
+            
+        ranges = T.shape_padleft(T.arange(r), t.ndim)
+        
+        return T.cast(T.eq(ranges, T.shape_padright(t, 1)) ,dtype =theano.config.floatX)       

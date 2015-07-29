@@ -3,10 +3,15 @@ import theano.tensor as T
 import numpy as np
 import logging
 import matplotlib.pyplot as plt
+import time
+import os
+import datetime
+import cPickle as pickle
 import Loss
 from initializations import glorot_uniform,zero,alloc_zeros_matrix
 from Layers import hidden,lstm,gru,BiDirectionLSTM
 
+logger = logging.getLogger(__name__)
 
 mode = theano.Mode(linker='cvm') #the runtime algo to execute the code is in c
 
@@ -66,7 +71,66 @@ class RNN(object):
         self.params+=layer.params
         self.L1 += layer.L1
         self.L2_sqr += layer.L2_sqr
-        
+    
+    def set_params(self,**params):
+        return
+    
+    def __getstate__(self):
+        """ Return state sequence."""
+        params = self.params  # parameters set in constructor
+        weights = [p.get_value() for p in self.params]
+        state = (params, weights)
+        return state
+
+    def _set_weights(self, weights):
+        """ Set fittable parameters from weights sequence.
+        Parameters must be in the order defined by self.params:
+            W, W_in, W_out, h0, bh, by
+        """
+        i = iter(weights)
+
+        for param in self.params:
+            param.set_value(i.next())
+
+    def __setstate__(self, state):
+        """ Set parameters from state sequence.
+        Parameters must be in the order defined by self.params:
+            W, W_in, W_out, h0, bh, by
+        """
+        params, weights = state
+        #self.set_params(**params)
+        #self.ready()
+        self._set_weights(weights)
+
+    def save(self, fpath='.', fname=None):
+        """ Save a pickled representation of Model state. """
+        fpathstart, fpathext = os.path.splitext(fpath)
+        if fpathext == '.pkl':
+            # User supplied an absolute path to a pickle file
+            fpath, fname = os.path.split(fpath)
+
+        elif fname is None:
+            # Generate filename based on date
+            date_obj = datetime.datetime.now()
+            date_str = date_obj.strftime('%Y-%m-%d-%H:%M:%S')
+            class_name = self.__class__.__name__
+            fname = '%s.%s.pkl' % (class_name, date_str)
+
+        fabspath = os.path.join(fpath, fname)
+
+        logger.info("Saving to %s ..." % fabspath)
+        file = open(fabspath, 'wb')
+        state = self.__getstate__()
+        pickle.dump(state, file, protocol=pickle.HIGHEST_PROTOCOL)
+        file.close()
+
+    def load(self, path):
+        """ Load model parameters from path. """
+        logger.info("Loading from %s ..." % path)
+        file = open(path, 'rb')
+        state = pickle.load(file)
+        self.__setstate__(state)
+        file.close()   
         
     
     def get_output(self):
@@ -143,7 +207,7 @@ class RNN(object):
 
                                       
    
-    def fit(self,X_train,Y_train):
+    def train(self,X_train,Y_train):
         train_set_x = theano.shared(np.asarray(X_train, dtype=theano.config.floatX))
         train_set_y = theano.shared(np.asarray(Y_train, dtype=theano.config.floatX))
         if self.output_type in ('binary', 'softmax'):
@@ -220,14 +284,22 @@ class RNN(object):
 
 class ENC_DEC(object):
     
-    def __init__(self,n_in,n_hidden,n_out,lr=0.001,n_epochs=400,L1_reg=0,L2_reg=0):
+    def __init__(self,n_in,n_hidden,n_out,
+                 time_steps_x,time_steps_y,lr=0.001,n_epochs=400,L1_reg=0,L2_reg=0):
         
         self.n_in=int(n_in)
         self.n_hidden=int(n_hidden)
         self.n_out=int(n_out)
         self.lr=float(lr)
+        self.time_steps_x=int(time_steps_x)
+        self.time_steps_y=int(time_steps_y)
+        self.maxlen= self.time_steps_y       
+        
 
         self.x = T.matrix(name = 'x', dtype = theano.config.floatX)
+        
+        self.W_hy = glorot_uniform((self.n_hidden,self.n_out))
+        self.b_hy = zero((n_out,))
          
         self.layers = []
         self.decoder=[]
@@ -236,8 +308,6 @@ class ENC_DEC(object):
         
         self.n_epochs=n_epochs
         
-        
-
         self.initial_momentum=0.5
         self.final_momentum=0.9
         self.momentum_switchover=5
@@ -265,11 +335,74 @@ class ENC_DEC(object):
         self.params+=layer.params
         self.L1 += layer.L1
         self.L2_sqr += layer.L2_sqr
-        
+    
+
+    def set_params(self,**params):
+        return
+    
+    def __getstate__(self):
+        """ Return state sequence."""
+        params = self.params  # parameters set in constructor
+        weights = [p.get_value() for p in self.params]
+        state = (params, weights)
+        return state
+
+    def _set_weights(self, weights):
+        """ Set fittable parameters from weights sequence.
+        Parameters must be in the order defined by self.params:
+            W, W_in, W_out, h0, bh, by
+        """
+        i = iter(weights)
+
+        for param in self.params:
+            param.set_value(i.next())
+
+    def __setstate__(self, state):
+        """ Set parameters from state sequence.
+        Parameters must be in the order defined by self.params:
+            W, W_in, W_out, h0, bh, by
+        """
+        params, weights = state
+        #self.set_params(**params)
+        #self.ready()
+        self._set_weights(weights)
+
+    def save(self, fpath='.', fname=None):
+        """ Save a pickled representation of Model state. """
+        fpathstart, fpathext = os.path.splitext(fpath)
+        if fpathext == '.pkl':
+            # User supplied an absolute path to a pickle file
+            fpath, fname = os.path.split(fpath)
+
+        elif fname is None:
+            # Generate filename based on date
+            date_obj = datetime.datetime.now()
+            date_str = date_obj.strftime('%Y-%m-%d-%H:%M:%S')
+            class_name = self.__class__.__name__
+            fname = '%s.%s.pkl' % (class_name, date_str)
+
+        fabspath = os.path.join(fpath, fname)
+
+        logger.info("Saving to %s ..." % fabspath)
+        file = open(fabspath, 'wb')
+        state = self.__getstate__()
+        pickle.dump(state, file, protocol=pickle.HIGHEST_PROTOCOL)
+        file.close()
+
+    def load(self, path):
+        """ Load model parameters from path. """
+        logger.info("Loading from %s ..." % path)
+        file = open(path, 'rb')
+        state = pickle.load(file)
+        self.__setstate__(state)
+        file.close()       
         
     
     def get_output(self):
-        return self.layers[-1].get_output()
+        return self.layers[-1].get_output(self.y)
+        
+    def get_sample(self,y,h):
+        return self.layers[-1].get_sample(y,h)    
 
     def set_input(self):
         for l in self.layers:
@@ -281,11 +414,12 @@ class ENC_DEC(object):
     def get_input(self, train=False):
         if not hasattr(self.layers[0], 'input'):
             self.set_input()
-        return self.layers[0].get_input()     
-        
-    def build(self,output_type):      
+        return self.layers[0].get_input()    
         
 
+        
+    def build(self,output_type):      
+        self.params+=[self.W_hy, self.b_hy]
         for param in self.params:
             self.updates[param] = theano.shared(
                                       value = np.zeros(
@@ -293,31 +427,61 @@ class ENC_DEC(object):
                                                       borrow = True).shape,
                                                       dtype = theano.config.floatX),
                                       name = 'updates')
-                                      
-            
-                                             
+         
+
+        ### set up regularizer                               
+   
+        self.L1 += T.sum(abs(self.W_hy))    
+        self.L2_sqr += T.sum(self.W_hy**2)
+                                                                  
         ### fianl prediction formular
                                              
- 
         self.y = T.vector(name = 'y', dtype = 'int32')
+               
+        self.y_pred = T.dot(self.get_output(), self.W_hy) + self.b_hy
+                
+        self.p_y_given_x = T.nnet.softmax(self.y_pred)
         
-        self.p_y_given_x=self.get_output()
-        
-
-        self.y_out = T.argmax(self.p_y_given_x, axis = -1)
         self.loss = lambda y: Loss.nll_multiclass(self.p_y_given_x,y)
         
-        self.predict_proba = theano.function(inputs = [self.x,],
-                                             outputs = self.p_y_given_x,
-                                             mode = mode)
-        self.predict = theano.function(inputs = [self.x, ],
-                                       outputs = self.y_out, # y-out is calculated by applying argmax
-                                       mode = mode)
-                                      
 
+
+        
                                       
+    def gen_sample(self,X_test):
+
+        sample=[]
+        sample_proba=[]
+        
+        next_w=-1*T.zeros((1,))       
+        h_w=T.zeros((self.n_hidden,))
+
+        for i in xrange(self.maxlen):
+            h_w=self.get_sample(next_w,h_w)
+            
+            y_gen = T.dot(h_w, self.W_hy) + self.b_hy
+            
+            p_y_given_x_gen = T.nnet.softmax(y_gen)
+            
+            sample_proba.append(p_y_given_x_gen)
+            
+            next_w = T.argmax(p_y_given_x_gen, axis = -1)  
+            
+            sample.append(next_w)             
+        
+        #Todo : implement Beam Search Algorithm here
+        
+        predict_proba = theano.function(inputs = [self.x,],
+                                             outputs = sample_proba,
+                                             mode = mode)
+                                             
+        predict = theano.function(inputs = [self.x,],
+                                       outputs = sample, # y-out is calculated by applying argmax
+                                       mode = mode)  
+                                       
+        return  predict_proba(X_test)                          
    
-    def fit(self,X_train,Y_train):
+    def train(self,X_train,Y_train):
         train_set_x = theano.shared(np.asarray(X_train, dtype=theano.config.floatX))
         train_set_y = theano.shared(np.asarray(Y_train, dtype=theano.config.floatX))
         train_set_y = T.cast(train_set_y, 'int32')
@@ -326,14 +490,18 @@ class ENC_DEC(object):
         lr = T.scalar('lr', dtype = theano.config.floatX)
         mom = T.scalar('mom', dtype = theano.config.floatX)  # momentum
         
-
-   
-        cost = self.loss(self.y) +self.L1_reg * self.L1
+        ### shift 1 sequence backward
+        y_shifted=T.zeros_like(train_set_y)
+        y_shifted=T.set_subtensor(y_shifted[:,1:],train_set_y[:,:-1])
+        train_set_y=y_shifted
         
+        cost = self.loss(self.y) +self.L1_reg * self.L1
                        
         gparams = []
         for param in self.params:
             gparams.append(T.grad(cost, param))
+            
+            
 
         # zip just concatenate two lists
         updates = {}
@@ -374,7 +542,7 @@ class ENC_DEC(object):
                 example_cost = train_model(idx,
                                            self.lr,
                                            effective_momentum)
-                T.pprint(self.p_y_given_x)
+               
                                   
             # compute loss on training set
             train_losses = [compute_train_error(i)

@@ -9,58 +9,73 @@ print 'Testing model with softmax outputs'
 
 #theano.config.exception_verbosity='high'
 
-n_u = 2
-n_h = 6
-n_y = 3
-time_steps = 10
+n_u = 10
+n_h = 20
+n_y =3 
+time_steps_x = 10
+
 n_seq= 100
 n_epochs = 1000
 
 np.random.seed(0)
 
-seq = np.random.randn(n_seq, time_steps, n_u)
+seq = np.random.randn(n_seq, time_steps_x, n_u)
 seq=np.cast[theano.config.floatX](seq)
 # Note that is this case `targets` is a 2d array
-targets = np.zeros((n_seq, time_steps), dtype=np.int)
+time_steps_y=12
+targets = np.zeros((n_seq, time_steps_y), dtype=np.int)
 
 thresh = 0.5
 # Comparisons to assing a class label in output
-targets[:, 2:][seq[:, 1:-1, 1] > seq[:, :-2, 0] + thresh] = 1
-targets[:, 2:][seq[:, 1:-1, 1] < seq[:, :-2, 0] - thresh] = 2
+
+targets[:, 0][seq[:, 0, 1] > seq[:, -1, 0] + thresh] = 1
+targets[:, 0][seq[:, 0, 1] < seq[:, -1, 0] - thresh] = 2
+targets[:, -1][seq[:, -1, 1] > seq[:, -2, 0] + thresh] = 1
+targets[:, -1][seq[:, -1, 1] < seq[:, -2, 0] - thresh] = 2
+targets[:, :][seq[:, 1:-1, 1] > seq[:, :-2, 0] + thresh] = 1
+targets[:, :][seq[:, 1:-1, 1] < seq[:, :-2, 0] - thresh] = 2
 # otherwise class is 0
 
-targets_onehot=np.zeros((n_seq, time_steps,n_y), dtype=np.int)
+targets_onehot=np.zeros((n_seq, time_steps_y,n_y), dtype=np.int)
 
 targets_onehot[:,:,0][targets[:,:]==0]=1
 targets_onehot[:,:,1][targets[:,:]==1]=1
 targets_onehot[:,:,2][targets[:,:]==2]=1
 
+mode='tr1'
 
-model = ENC_DEC(n_u,n_h,n_y,0.001,200)
-model.add(BiDirectionLSTM(n_u,n_h))
-model.add(decoder(n_h,n_y))
-'''
-model = RNN(n_u,n_h,n_y,0.001,200)
+model = ENC_DEC(n_u,n_h,n_y,time_steps_x,time_steps_y,0.001,200)
 model.add(hidden(n_u,n_h))
-model.add(hidden(n_h,n_h))
-'''
+model.add(decoder(n_h,n_h,time_steps_x,time_steps_y))
 
 model.build('softmax')
-model.fit(seq,targets)
 
 
+
+if mode=='tr':
+    model.train(seq,targets)
+    model.save('encdec_new.pkl')
+else:model.load('encdec_new.pkl')
+
+i=10
 plt.close('all')
 fig = plt.figure()
 ax1 = plt.subplot(311)
-plt.plot(seq[1])
+plt.plot(seq[i])
 plt.grid()
 ax1.set_title('input')
 ax2 = plt.subplot(312)
 
-plt.scatter(xrange(time_steps), targets[1], marker = 'o', c = 'b')
+plt.scatter(xrange(time_steps_y), targets[i], marker = 'o', c = 'b')
 plt.grid()
 
-guess = model.predict_proba(seq[1])
+guess = model.gen_sample(seq[i])
+
+guess=np.asarray(guess,dtype=np.float).reshape((12,3))
+
+
+
+
 guessed_probs = plt.imshow(guess.T, interpolation = 'nearest', cmap = 'gray')
 ax2.set_title('blue points: true class, grayscale: model output (white mean class)')
 
@@ -68,3 +83,42 @@ ax3 = plt.subplot(313)
 plt.plot(model.errors)
 plt.grid()
 ax3.set_title('Training error')
+
+
+'''
+
+model = RNN(n_u,n_h,n_y,0.001,200)
+model.add(hidden(n_u,n_h))
+
+model.build('softmax')
+
+model.train(seq,targets)
+
+i=1
+plt.close('all')
+fig = plt.figure()
+ax1 = plt.subplot(311)
+plt.plot(seq[i])
+plt.grid()
+ax1.set_title('input')
+ax2 = plt.subplot(312)
+
+plt.scatter(xrange(time_steps_y), targets[i], marker = 'o', c = 'b')
+plt.grid()
+
+
+guess = model.predict_proba(seq[i])
+
+#guess = model.gen_sample(seq[i])
+
+#guess=np.asarray(guess,dtype=np.float)
+
+guessed_probs = plt.imshow(guess.T, interpolation = 'nearest', cmap = 'gray')
+ax2.set_title('blue points: true class, grayscale: model output (white mean class)')
+
+ax3 = plt.subplot(313)
+plt.plot(model.errors)
+plt.grid()
+ax3.set_title('Training error')
+
+'''
