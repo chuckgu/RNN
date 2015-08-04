@@ -11,8 +11,11 @@ print 'Testing model with softmax outputs'
 
 n_u = 10
 n_h = 20
-n_y =3 
 time_steps_x = 10
+
+n_d = 30
+n_y = 3 
+time_steps_y = 10
 
 n_seq= 100
 n_epochs = 1000
@@ -22,18 +25,18 @@ np.random.seed(0)
 seq = np.random.randn(n_seq, time_steps_x, n_u)
 seq=np.cast[theano.config.floatX](seq)
 # Note that is this case `targets` is a 2d array
-time_steps_y=12
+
 targets = np.zeros((n_seq, time_steps_y), dtype=np.int)
 
 thresh = 0.5
 # Comparisons to assing a class label in output
 
-targets[:, 0][seq[:, 0, 1] > seq[:, -1, 0] + thresh] = 1
-targets[:, 0][seq[:, 0, 1] < seq[:, -1, 0] - thresh] = 2
+targets[:, 0][seq[:, 0, 1] > seq[:, 0, 0] + thresh] = 1
+targets[:, 0][seq[:, 0, 1] < seq[:, 0, 0] - thresh] = 2
 targets[:, -1][seq[:, -1, 1] > seq[:, -2, 0] + thresh] = 1
 targets[:, -1][seq[:, -1, 1] < seq[:, -2, 0] - thresh] = 2
-targets[:, :][seq[:, 1:-1, 1] > seq[:, :-2, 0] + thresh] = 1
-targets[:, :][seq[:, 1:-1, 1] < seq[:, :-2, 0] - thresh] = 2
+targets[:, 1:][seq[:, 1:-1, 1] > seq[:, :-2, 0] + thresh] = 1
+targets[:, 1:][seq[:, 1:-1, 1] < seq[:, :-2, 0] - thresh] = 2
 # otherwise class is 0
 
 targets_onehot=np.zeros((n_seq, time_steps_y,n_y), dtype=np.int)
@@ -42,11 +45,11 @@ targets_onehot[:,:,0][targets[:,:]==0]=1
 targets_onehot[:,:,1][targets[:,:]==1]=1
 targets_onehot[:,:,2][targets[:,:]==2]=1
 
-mode='tr1'
+mode='tr'
 
-model = ENC_DEC(n_u,n_h,n_y,time_steps_x,time_steps_y,0.001,200)
+model = ENC_DEC(n_u,n_h,n_d,n_y,time_steps_x,time_steps_y,0.001,50)
 model.add(hidden(n_u,n_h))
-model.add(decoder(n_h,n_h,time_steps_x,time_steps_y))
+model.add(decoder(n_h,n_d,n_y,time_steps_x,time_steps_y))
 
 model.build('softmax')
 
@@ -57,7 +60,7 @@ if mode=='tr':
     model.save('encdec_new.pkl')
 else:model.load('encdec_new.pkl')
 
-i=10
+i=15
 plt.close('all')
 fig = plt.figure()
 ax1 = plt.subplot(311)
@@ -71,7 +74,9 @@ plt.grid()
 
 guess = model.gen_sample(seq[i])
 
-guess=np.asarray(guess,dtype=np.float).reshape((12,3))
+aa=guess[1]
+
+guess=np.asarray(guess[0],dtype=np.float).reshape((10,3))
 
 
 

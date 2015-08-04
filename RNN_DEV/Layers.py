@@ -1,7 +1,7 @@
 import theano
 import theano.tensor as T
 import numpy as np
-from initializations import glorot_uniform,zero,alloc_zeros_matrix
+from initializations import glorot_uniform,zero,alloc_zeros_matrix,glorot_normal
 import theano.typed_list
 
 
@@ -341,43 +341,83 @@ class BiDirectionLSTM(object):
             raise Exception('output mode is not sum or concat')
 
 class decoder(object):
-    def __init__(self,n_in,n_out,time_steps_x,time_steps_y):
+    def __init__(self,n_in,n_hidden,n_out,time_steps_x,time_steps_y):
         self.n_in=int(n_in)
+        self.n_hidden=int(n_hidden)
         self.n_out=int(n_out)
         self.input= T.tensor3()
         self.output= T.tensor3()
         self.time_steps_x=int(time_steps_x)
         self.time_steps_y=int(time_steps_y)
         
-        self.W_z = glorot_uniform((n_in,n_out))
-        self.U_z = glorot_uniform((n_out,n_out))
-        self.b_z = zero((n_out,))
+        self.W_z = glorot_normal((n_out,n_hidden))
+        self.U_z = glorot_normal((n_hidden,n_hidden))
+        self.b_z = zero((n_hidden,))
 
-        self.W_r = glorot_uniform((n_in,n_out))
-        self.U_r = glorot_uniform((n_out,n_out))
-        self.b_r = zero((n_out,))
+        self.W_r = glorot_normal((n_out,n_hidden))
+        self.U_r = glorot_normal((n_hidden,n_hidden))
+        self.b_r = zero((n_hidden,))
 
-        self.W_h = glorot_uniform((n_in,n_out)) 
-        self.U_h = glorot_uniform((n_out,n_out))
-        self.b_h = zero((n_out,))
-
-        
-        self.W_hh=glorot_uniform((n_out,n_out))
-        self.W_ys=glorot_uniform((self.n_out,n_out))
+        self.W_h = glorot_normal((n_out,n_hidden)) 
+        self.U_h = glorot_normal((n_hidden,n_hidden))
+        self.b_h = zero((n_hidden,))
 
         
+        #self.W_hh=glorot_uniform((n_hidden,n_hidden))
+        self.W_yc=glorot_normal((self.n_out,))
         
-        self.W_cy = glorot_uniform((self.n_in,self.n_out))
-        self.W_cs= glorot_uniform((self.n_in,self.n_out))
+
+        self.W_cy = glorot_normal((self.n_in,self.n_hidden))
+        self.W_cs= glorot_normal((self.n_in,self.n_hidden))
+
         
-        self.W_ha = glorot_uniform((self.n_in,))
-        self.W_sa= glorot_uniform((self.n_out,self.time_steps_x))
+        self.W_ha = glorot_normal((self.n_in,))
+        self.W_sa= glorot_normal((self.n_hidden,))
         
-        self.params=[self.W_hh,self.W_ys,self.W_cs,self.W_ha,self.W_sa]
-        #self.params=[self.W_hh]
+        self.W_cl= glorot_normal((self.n_in,self.n_hidden))
+        self.W_yl= glorot_normal((self.n_out,self.n_hidden))
+        self.W_hl= glorot_normal((self.n_hidden,self.n_hidden))
+        
+        self.params=[self.W_z,self.U_z,self.b_z,self.W_r,self.U_r,self.b_r,
+                   self.W_h,self.U_h,self.b_h,self.W_cy,self.W_cs,self.W_ha,self.W_sa
+                     ,self.W_cl,self.W_yl,self.W_hl]
+        
+        #self.params=[self.W_z,self.U_z,self.b_z,self.W_r,self.U_r,self.b_r,
+        #            self.W_h,self.U_h,self.b_h,self.W_cy,self.W_cs,self.W_cl,self.W_yl,self.W_hl]            
          
-        self.L1 = T.sum(abs(self.W_hh))+T.sum(abs(self.W_ys))
-        self.L2_sqr = T.sum(self.W_hh**2) + T.sum(self.W_ys**2)
+        self.L1 = T.sum(abs(self.W_h))+T.sum(abs(self.W_cy))
+        self.L2_sqr = T.sum(self.W_h**2) + T.sum(self.W_cy**2)
+        
+    def _step(self,y_tm1,s_tm1,l_tm1,h):
+        
+        # attention
+         
+        pctx__=T.dot(h,self.W_ha)+T.dot(s_tm1,self.W_sa)
+        
+        #pctx__+=T.dot(y_t,self.W_yc)
+        
+        e=T.exp(T.tanh(pctx__))
+        
+        #e=T.dot(pctx__,self.U_z)
+        
+        e=e/e.sum(0, keepdims=True)
+        
+        c=T.dot(e.T,h)
+
+        #c=(h*e[:,:,None]).sum(0)
+        
+        
+        #without attention
+        #c=h.mean(0)
+
+        z = T.tanh(T.dot(y_tm1, self.W_z) + self.b_z + T.dot(s_tm1, self.U_z)+T.dot(c,self.W_cs))
+        r = T.tanh(T.dot(y_tm1, self.W_r) + self.b_r + T.dot(s_tm1, self.U_r)+T.dot(c,self.W_cs))
+        hh_t = T.tanh(T.dot(y_tm1, self.W_h) + self.b_h + T.dot(r * s_tm1, self.U_h)+T.dot(c,self.W_cy))
+        s_t = z * hh_t + (1 - z) * s_tm1
+        
+        logit=T.tanh(T.dot(s_tm1, self.W_hl)+T.dot(y_tm1, self.W_yl)+T.dot(c, self.W_cl))
+        
+        return T.cast(s_t,dtype =theano.config.floatX),logit  
 
     def set_previous(self,layer):
         self.previous = layer
@@ -386,8 +426,7 @@ class decoder(object):
         
     def set_input(self,x):
         self.input=x
-    
-    
+
         
     def get_input(self):
         if hasattr(self, 'previous'):
@@ -395,40 +434,31 @@ class decoder(object):
         else:
             return self.input    
 
-    def _step(self,y_t,s_tm1,h):
-        
-        
-        e=T.tanh(T.dot(h,self.W_ha)+T.dot(s_tm1,self.W_sa).T)
-                
-        e=T.exp(e)/T.sum(T.exp(e))
 
-        c=T.dot(e.T,h)
 
+    def get_sample(self,y,s_tm1):
+        c=self.get_input()
+        Y=T.switch(y[:]<0,alloc_zeros_matrix(self.n_out),self.one_hot(y,self.n_out)[0])
+
+        h,logit=self._step(Y,s_tm1,None,c) 
         
-        s_t=T.tanh(T.dot(s_tm1, self.W_hh)  +T.dot(y_t,self.W_ys) +T.dot(c,self.W_cs))
-        
-        return T.cast(s_t,dtype =theano.config.floatX)  
 
-    def get_sample(self,y,h_tm1):
-        X=self.get_input()
-        Y=T.switch(y[0]<0,alloc_zeros_matrix(self.n_out),self.one_hot(y,self.n_out)[0])
-
-        h=self._step(Y,h_tm1,X)        
-        return h
+        return h,logit,Y
 
     
-    def get_output(self,y):
-        X=self.get_input()
-        Y=y                    
-        Y=self.one_hot(Y,self.n_out)
-        
-        h, _ = theano.scan(self._step, 
+    def get_output(self,y,init_state):
+        X=self.get_input()          
+        Y=self.one_hot(y,self.n_out)
+
+        [h,logit], _ = theano.scan(self._step, 
                              sequences = Y,
-                             outputs_info = alloc_zeros_matrix(self.n_out),
+                             outputs_info = [init_state,
+                                             alloc_zeros_matrix(self.n_hidden)],
                              non_sequences=X)
                              #n_steps=self.time_steps_y)
-
-        return h
+        
+        
+        return logit
         
         
     def one_hot(self,t, r=None):

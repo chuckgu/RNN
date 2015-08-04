@@ -284,11 +284,12 @@ class RNN(object):
 
 class ENC_DEC(object):
     
-    def __init__(self,n_in,n_hidden,n_out,
+    def __init__(self,n_in,n_hidden,n_decoder,n_out,
                  time_steps_x,time_steps_y,lr=0.001,n_epochs=400,L1_reg=0,L2_reg=0):
         
         self.n_in=int(n_in)
         self.n_hidden=int(n_hidden)
+        self.n_decoder=int(n_decoder)
         self.n_out=int(n_out)
         self.lr=float(lr)
         self.time_steps_x=int(time_steps_x)
@@ -298,8 +299,11 @@ class ENC_DEC(object):
 
         self.x = T.matrix(name = 'x', dtype = theano.config.floatX)
         
-        self.W_hy = glorot_uniform((self.n_hidden,self.n_out))
+        self.W_hy = glorot_uniform((self.n_decoder,self.n_out))
         self.b_hy = zero((n_out,))
+        
+        self.W_hi = glorot_uniform((self.n_hidden,self.n_decoder))
+        self.b_hi = zero((n_decoder,))
          
         self.layers = []
         self.decoder=[]
@@ -399,7 +403,8 @@ class ENC_DEC(object):
         
     
     def get_output(self):
-        return self.layers[-1].get_output(self.y)
+        init_state=T.tanh(T.dot(self.layers[-1].get_input().mean(0), self.W_hi) + self.b_hi)
+        return self.layers[-1].get_output(self.y,init_state)
         
     def get_sample(self,y,h):
         return self.layers[-1].get_sample(y,h)    
@@ -419,7 +424,7 @@ class ENC_DEC(object):
 
         
     def build(self,output_type):      
-        self.params+=[self.W_hy, self.b_hy]
+        self.params+=[self.W_hy, self.b_hy,self.W_hi, self.b_hi]
         for param in self.params:
             self.updates[param] = theano.shared(
                                       value = np.zeros(
@@ -452,14 +457,19 @@ class ENC_DEC(object):
 
         sample=[]
         sample_proba=[]
+        y_g=[]
         
-        next_w=-1*T.zeros((1,))       
-        h_w=T.zeros((self.n_hidden,))
+        next_w=-1*T.ones((1,))       
+        h_w=T.tanh(T.dot(self.layers[-1].get_input().mean(0), self.W_hi) + self.b_hi)
 
         for i in xrange(self.maxlen):
-            h_w=self.get_sample(next_w,h_w)
+            h_w,logit,test=self.get_sample(next_w,h_w)
             
-            y_gen = T.dot(h_w, self.W_hy) + self.b_hy
+            y_g.append(test)   
+            
+            y_gen = T.dot(logit, self.W_hy) + self.b_hy
+            
+            
             
             p_y_given_x_gen = T.nnet.softmax(y_gen)
             
@@ -479,7 +489,7 @@ class ENC_DEC(object):
                                        outputs = sample, # y-out is calculated by applying argmax
                                        mode = mode)  
                                        
-        return  predict_proba(X_test)                          
+        return  predict_proba(X_test),predict(X_test)                          
    
     def train(self,X_train,Y_train):
         train_set_x = theano.shared(np.asarray(X_train, dtype=theano.config.floatX))
@@ -495,7 +505,7 @@ class ENC_DEC(object):
         y_shifted=T.set_subtensor(y_shifted[:,1:],train_set_y[:,:-1])
         train_set_y=y_shifted
         
-        cost = self.loss(self.y) +self.L1_reg * self.L1
+        cost = self.loss(self.y) #+self.L1_reg * self.L1
                        
         gparams = []
         for param in self.params:
