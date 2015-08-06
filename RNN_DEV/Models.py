@@ -443,7 +443,7 @@ class ENC_DEC(object):
                                              
         self.y = T.vector(name = 'y', dtype = 'int32')
         
-        self.y_or = T.vector(name = 'y', dtype = 'int32')
+        self.y_result = T.vector(name = 'y', dtype = 'int32')
                
         self.y_pred = T.dot(self.get_output(), self.W_hy) + self.b_hy
                 
@@ -459,19 +459,18 @@ class ENC_DEC(object):
 
         sample=[]
         sample_proba=[]
-        y_g=[]
+
         
         next_w=-1*T.ones((1,))       
         h_w=T.tanh(T.dot(self.layers[-1].get_input().mean(0), self.W_hi) + self.b_hi)
 
         for i in xrange(self.maxlen):
-            h_t,logit,test=self.get_sample(next_w,h_w)
+            h_t,logit=self.get_sample(next_w,h_w)
             
-            #y_g.append(test)   
             
             y_gen = T.dot(logit, self.W_hy) + self.b_hy
             
-            
+
             
             p_y_given_x_gen = T.nnet.softmax(y_gen)
             
@@ -497,20 +496,20 @@ class ENC_DEC(object):
    
     def train(self,X_train,Y_train):
         train_set_x = theano.shared(np.asarray(X_train, dtype=theano.config.floatX))
-        train_set_y_or = theano.shared(np.asarray(Y_train, dtype=theano.config.floatX))
-        train_set_y_or = T.cast(train_set_y_or, 'int32')
+        train_set_y_result = theano.shared(np.asarray(Y_train, dtype=theano.config.floatX))
+        train_set_y_result = T.cast(train_set_y_result, 'int32')
         
         index = T.lscalar('index')    # index to a case    
         lr = T.scalar('lr', dtype = theano.config.floatX)
         mom = T.scalar('mom', dtype = theano.config.floatX)  # momentum
         
         ### shift 1 sequence backward
-        y_shifted=T.zeros_like(train_set_y_or)
-        y_shifted=T.set_subtensor(y_shifted[:,1:],train_set_y_or[:,:-1])
+        y_shifted=T.zeros_like(train_set_y_result)
+        y_shifted=T.set_subtensor(y_shifted[:,1:],train_set_y_result[:,:-1])
         train_set_y=y_shifted        
 
         
-        cost = self.loss(self.y_or) #+self.L1_reg * self.L1
+        cost = self.loss(self.y_result) #+self.L1_reg * self.L1
                        
         gparams = []
         for param in self.params:
@@ -527,11 +526,11 @@ class ENC_DEC(object):
             updates[param] = param + upd
             
         compute_train_error = theano.function(inputs = [index, ],
-                                              outputs = self.loss(self.y_or),
+                                              outputs = self.loss(self.y_result),
                                               givens = {
                                                   self.x: train_set_x[index],
                                                   self.y: train_set_y[index],
-                                                  self.y_or: train_set_y_or[index]},
+                                                  self.y_result: train_set_y_result[index]},
                                               mode = mode)    
        
         train_model =theano.function(inputs = [index, lr, mom],
@@ -540,7 +539,7 @@ class ENC_DEC(object):
                                       givens = {
                                             self.x: train_set_x[index],
                                             self.y: train_set_y[index],
-                                            self.y_or: train_set_y_or[index]},
+                                            self.y_result: train_set_y_result[index]},
                                       mode = mode, allow_input_downcast=True)
                      
         ###############

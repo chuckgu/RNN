@@ -45,9 +45,9 @@ targets_onehot[:,:,0][targets[:,:]==0]=1
 targets_onehot[:,:,1][targets[:,:]==1]=1
 targets_onehot[:,:,2][targets[:,:]==2]=1
 
-mode='tr1'
+mode='tr'
 
-model = ENC_DEC(n_u,n_h,n_d,n_y,time_steps_x,time_steps_y,0.001,100)
+model = ENC_DEC(n_u,n_h,n_d,n_y,time_steps_x,time_steps_y,0.001,200)
 model.add(hidden(n_u,n_h))
 model.add(decoder(n_h,n_d,n_y,time_steps_x,time_steps_y))
 

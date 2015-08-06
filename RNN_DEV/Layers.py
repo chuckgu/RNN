@@ -440,7 +440,7 @@ class decoder(object):
         h,logit=self._step(Y,s_tm1,c) 
         
 
-        return h,logit,Y
+        return h,logit
 
     
     def get_output(self,y,init_state):
