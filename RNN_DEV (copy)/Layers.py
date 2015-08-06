@@ -361,6 +361,9 @@ class decoder(object):
         self.W_h = glorot_normal((n_out,n_hidden)) 
         self.U_h = glorot_normal((n_hidden,n_hidden))
         self.b_h = zero((n_hidden,))
+        
+        self.W_hy = glorot_normal((self.n_hidden,self.n_out))
+        self.b_hy = zero((n_out,))
 
         
         #self.W_hh=glorot_uniform((n_hidden,n_hidden))
@@ -380,7 +383,7 @@ class decoder(object):
         
         self.params=[self.W_z,self.U_z,self.b_z,self.W_r,self.U_r,self.b_r,
                    self.W_h,self.U_h,self.b_h,self.W_cy,self.W_cs,self.W_ha,self.W_sa
-                     ,self.W_cl,self.W_yl,self.W_hl]
+                     ,self.W_cl,self.W_yl,self.W_hl,self.W_hy,self.b_hy]
         
         #self.params=[self.W_z,self.U_z,self.b_z,self.W_r,self.U_r,self.b_r,
         #            self.W_h,self.U_h,self.b_h,self.W_cy,self.W_cs,self.W_cl,self.W_yl,self.W_hl]            
@@ -406,14 +409,25 @@ class decoder(object):
 
         #c=(h*e[:,:,None]).sum(0)
 
-        z = T.tanh(T.dot(y_tm1, self.W_z) + self.b_z + T.dot(s_tm1, self.U_z)+T.dot(c,self.W_cs))
-        r = T.tanh(T.dot(y_tm1, self.W_r) + self.b_r + T.dot(s_tm1, self.U_r)+T.dot(c,self.W_cs))
-        hh_t = T.tanh(T.dot(y_tm1, self.W_h) + self.b_h + T.dot(r * s_tm1, self.U_h)+T.dot(c,self.W_cy))
+        logit=T.tanh(T.dot(s_tm1, self.W_hl)+T.dot(y_tm1, self.W_yl)+T.dot(c, self.W_cl))
+        
+        
+        y_pred = T.dot(logit, self.W_hy) + self.b_hy
+                
+        p_y_given_x = T.nnet.softmax(y_pred)
+        
+        y_arg = T.argmax(p_y_given_x, axis = -1)
+        
+        y_t=self.one_hot(y_arg,self.n_out)[0]
+        
+        
+
+        z = T.tanh(T.dot(y_t, self.W_z) + self.b_z + T.dot(s_tm1, self.U_z)+T.dot(c,self.W_cs))
+        r = T.tanh(T.dot(y_t, self.W_r) + self.b_r + T.dot(s_tm1, self.U_r)+T.dot(c,self.W_cs))
+        hh_t = T.tanh(T.dot(y_t, self.W_h) + self.b_h + T.dot(r * s_tm1, self.U_h)+T.dot(c,self.W_cy))
         s_t = z * s_tm1 + (1 - z) * hh_t
         
-        logit=T.tanh(T.dot(s_t, self.W_hl)+T.dot(y_tm1, self.W_yl)+T.dot(c, self.W_cl))
-        
-        return T.cast(s_t,dtype =theano.config.floatX),logit  
+        return T.cast(s_t,dtype =theano.config.floatX),y_pred  
 
     def set_previous(self,layer):
         self.previous = layer
@@ -434,30 +448,33 @@ class decoder(object):
 
     def get_sample(self,y,s_tm1):
         c=self.get_input()
+        Y=T.switch(y[:]<0,alloc_zeros_matrix(self.n_out),self.one_hot(y,self.n_out)[0])
 
-        Y=self.one_hot(y,self.n_out)[0]
-
-        h,logit=self._step(Y,s_tm1,c) 
+        h,y_pred=self._step(Y,s_tm1,c) 
         
 
-        return h,logit,Y
+        return h,y_pred
 
     
     def get_output(self,y,init_state):
-        X=self.get_input()   
-        y=T.set_subtensor(y[0],-1)
+        X=self.get_input()          
         Y=self.one_hot(y,self.n_out)
-        
-
+        '''
         [h,logit], _ = theano.scan(self._step, 
-                                     sequences = Y,
-                                     outputs_info = [init_state,
-                                                     None],
-                                     non_sequences=X)
+                             sequences = Y,
+                             outputs_info = [init_state,
+                                             alloc_zeros_matrix(self.n_hidden)],
+                             non_sequences=X)
                              #n_steps=self.time_steps_y)
-        
-        
-        return logit
+        '''
+        [h,y_pred], _ = theano.scan(self._step, 
+                                             sequences = Y,
+                                             outputs_info = [init_state,
+                                                             None],
+                                             non_sequences=X)
+                             #n_steps=self.time_steps_y)
+                                           
+        return y_pred
         
         
     def one_hot(self,t, r=None):

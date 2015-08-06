@@ -45,7 +45,7 @@ targets_onehot[:,:,0][targets[:,:]==0]=1
 targets_onehot[:,:,1][targets[:,:]==1]=1
 targets_onehot[:,:,2][targets[:,:]==2]=1
 
-mode='tr1'
+mode='tr'
 
 model = ENC_DEC(n_u,n_h,n_d,n_y,time_steps_x,time_steps_y,0.001,100)
 model.add(hidden(n_u,n_h))
@@ -60,7 +60,7 @@ if mode=='tr':
     model.save('encdec_new.pkl')
 else:model.load('encdec_new.pkl')
 
-i=15
+i=1
 plt.close('all')
 fig = plt.figure()
 ax1 = plt.subplot(311)
