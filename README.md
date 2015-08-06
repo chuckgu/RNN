@@ -1,4 +1,4 @@
-# RNN
+# Attention based RNN Encoder-Decoder 
 
 Refer to:
 
