@@ -20,7 +20,7 @@ n_y = 3
 time_steps_y = 10
 
 n_seq= 105
-n_epochs = 1000
+n_epochs = 100
 
 n_batch=15
 n_maxlen=10
@@ -58,9 +58,9 @@ mode='tr'
 seq=seq.transpose(1,0,2)
 targets_onehot=targets_onehot.transpose(1,0,2)
 
-model = ENC_DEC(n_u,n_h,n_d,n_y,0.001,500,n_batch,n_maxlen)
-model.add(hidden(n_u,n_h))
-model.add(decoder(n_h,n_d,n_y))
+model = ENC_DEC(n_u,n_h*2,n_d,n_y,0.001,n_epochs,n_batch,n_maxlen)
+model.add(BiDirectionLSTM(n_u,n_h))
+model.add(decoder(n_h*2,n_d,n_y))
 
 model.build('softmax')
 

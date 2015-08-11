@@ -344,7 +344,7 @@ class BiDirectionLSTM(object):
         if self.output_mode is 'sum':
             return forward + backward
         elif self.output_mode is 'concat':
-            return T.concatenate([forward, backward], axis=1)
+            return T.concatenate([forward, backward], axis=2)
         else:
             raise Exception('output mode is not sum or concat')
 
